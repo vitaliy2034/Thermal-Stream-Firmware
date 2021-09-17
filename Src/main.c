@@ -1,9 +1,12 @@
 #include "main.h"
 #include "drv_bt.h"
+#include "sp_bt_task.h"
 #include "stdlib.h"
 #include "stdio.h"
 
-static QueueHandle_t  	 m_xCMDQueue;
+static QueueHandle_t  	 m_xBTRawCMDQueue;
+static QueueHandle_t  	 m_xCMDReqQueue;
+static QueueHandle_t  	 m_xCMDRespQueue;
 static SemaphoreHandle_t m_xTXSemaphore;
 static SemaphoreHandle_t m_xConfigDBMutex;
 
@@ -15,79 +18,127 @@ struct
 		uint32_t ulStatus;
 } xConfigDB;
 
-void vSendResp(bool bIsError, int16_t ulResp){
-		uint8_t		pucResp[TSK_BT_RESP_LEN + 1] = {0};
 
-		if(bIsError)
-				sprintf((char *)pucResp, "ER%04X", ulResp);
-		else
-				sprintf((char *)pucResp, "OK%04X", ulResp);
-		
-		//Take UART TX Semaphore 
-		xSemaphoreTake(m_xTXSemaphore, portMAX_DELAY);
-		//Send responce
-		drv_bt_send_resp(pucResp, TSK_BT_RESP_LEN);
+//NOTE: This function called from ISR, so use *fromISR function
+void vBTEventHandler (BTEventType_t xEventType, const void * pv_context){
+		switch(xEventType){
+				case BT_EVT_CMD_RX_END: 
+						configASSERT(xQueueSendFromISR(m_xBTRawCMDQueue, pv_context, NULL) != pdTRUE);
+						break;
+				case BT_EVT_RESP_TX_END:
+						xSemaphoreGiveFromISR(m_xTXSemaphore, NULL);
+						break;
+				case BT_EVT_UART_ERR:
+						//TODO: define UART error handling
+						break;
+				default:
+					break;
+		}
+
+
 }
-
-void vBTTask(void * pvParams){
-	uint8_t 		pucCMD[TSK_BT_CMD_LEN] = {0};
+void vRequestHandlerTask(void * pbParam){
+	CMDRequest_t eRequest;
 	for(;;){
-		xQueueReceive(m_xCMDQueue, pucCMD, portMAX_DELAY);
-		//check if error
-		BTStatus_t 	eCMDStatus = drv_bt_read_and_clear_status();
-		if(eCMDStatus != BT_OK)
-		{
-				vSendResp(pdTRUE, eCMDStatus);
-		}
-		//check is the command is "wrtmp"
-		else if(memcmp(pucCMD, "wrtmp", TSK_BT_CMD_ONLY_LEN) == 0)
-		{
-				int16_t sDecodedTemperature = 0;
-				for(uint8_t i = TSK_BT_CMD_ONLY_LEN; i < TSK_BT_CMD_LEN; i++)
-				{		
-						//check is end
-						if(pucCMD[i] == '\0' && i > TSK_BT_CMD_ONLY_LEN)
-						{
-								break;
-						}
-						//convert ASCII to digit
-						else if(0x3A > pucCMD[i] && pucCMD[i] >= 0x30)
-						{
-								sDecodedTemperature = (sDecodedTemperature * 10) + (pucCMD[i] - 0x30);
-						}
-						//if hare - there is error
-						else
-						{
-								sDecodedTemperature = 0x7FFF;
-								break;
-						}
-				}
-				//Check for valid range and error
-				if(sDecodedTemperature > MAX_TEMP || MIN_TEMP > sDecodedTemperature)
+				xQueueReceive(m_xCMDReqQueue, &eRequest, portMAX_DELAY);
+				switch(eRequest)
 				{
-						vSendResp(pdTRUE, BT_ERR_PARAM_WRNG);
-						continue;
+						case REQ_READ_TEMP:
+						{	
+								xQueueSend(m_xCMDRespQueue, ,portMAX_DELAY);
+						}break;
+						case REQ_READ_STAT:
+						{
+								
+						}break;
+						
 				}
-				xSemaphoreTake(m_xConfigDBMutex, portMAX_DELAY);
-				xConfigDB.sRequiredTemperature = sDecodedTemperature;
-				xSemaphoreGive(m_xConfigDBMutex);
-				vSendResp(false, 0);
 		}
-		//check is the command is "rdtmb"
-		//
-		
-	}
-	vTaskDelete(NULL);
+		vTaskDelete(NULL);
+}
+void vBTTask(void * pvParams){
+		uint8_t pucCMD[TSK_BT_CMD_LEN] = {0};
+		int16_t sParamCnt = 0;
+		int32_t plParamArr[TSK_BT_MAX_PARAM_CNT];
+		uint8_t	pucResp[TSK_BT_RESP_LEN + 1] = {0};
+		for(;;){
+				xQueueReceive(m_xBTRawCMDQueue, pucCMD, portMAX_DELAY);
+				//check if error
+				BTStatus_t 	eBTStatus = drv_bt_read_and_clear_status();
+				if(eBTStatus == BT_OK)
+				{
+						//Check and get parameters 
+						sParamCnt = sSPSplitDigits(plParamArr,(pucCMD + TSK_BT_CMD_ONLY_LEN), \
+																			 TSK_BT_PARAM_SPLT_CH, '\n', \
+																			 TSK_BT_MAX_PARAM_CNT, TSK_BT_CMD_LEN - TSK_BT_CMD_ONLY_LEN);
+						
+						
+						//is that directive check(every direvtive has a parameter)
+						if(sParamCnt > 1)
+						{
+								//Search directicve
+								//check is the request is "wrtmp"
+								if(memcmp(pucCMD, "wrtmp", TSK_BT_CMD_ONLY_LEN) == 0)
+								{
+								
+								}
+								
+						}	
+						else if(sParamCnt == 0)//is that request check(every request has no parameters)
+						{
+								//Search requests
+								CMDRequest_t eRequest = REQ_INVALID;
+								//check is the request is "rdtmp"
+								if(memcmp(pucCMD, "rdtmp", TSK_BT_CMD_ONLY_LEN) == 0)
+								{
+										eRequest = REQ_READ_TEMP;
+								}
+								else if(memcmp(pucCMD, "rdsts", TSK_BT_CMD_ONLY_LEN) == 0)
+								{
+										eRequest = REQ_READ_STAT;
+								}
+								//TODO: ??
+								//Send to ReqHandlerTask through request queue
+								xQueueSend(m_xCMDReqQueue, &eRequest, portMAX_DELAY);
+								
+								//Wait for ReqHandlerTask answer
+								xQueueReceive(m_xCMDRespQueue, 
+						}
+						else //error handling 
+						{
+						
+						}
+				}
+				else //if have any drv_bt errors
+				{
+						//Generate error responce(Hare we use BTStatus_t, because BTStatus_t error codes are same with BTResp_t)
+						sprintf((char *)pucResp, BT_RESP_PAT_ERR, eBTStatus);
+				}
+				//Take UART TX Semaphore 
+				xSemaphoreTake(m_xTXSemaphore, portMAX_DELAY);
+				//Send responce
+				ReturnCode eRetCode = drv_bt_send_resp(pucResp, TSK_BT_RESP_LEN);
+				if(eRetCode !=  DRV_OK)
+				{
+					//TODO: critical error?
+				}
+			
+		}
+		vTaskDelete(NULL);
 }
 
 int main(){
-	m_xCMDQueue 	   		= xQueueCreate(TSK_BT_CMD_Q_LEN, DRV_BT_RX_BUFF_LEN);
-	m_xTXSemaphore   		= xSemaphoreCreateBinary();
-	m_xConfigDBMutex 		= xSemaphoreCreateMutex();
-	
-	
-	ReturnCode xDriverStatus = drv_bt_init(&m_xCMDQueue, &m_xTXSemaphore);
-	BaseType_t xTaskStatus   = xTaskCreate(vBTTask, "BTTask", configMINIMAL_STACK_SIZE, NULL, 1, NULL);
-	vTaskStartScheduler(); 
-	return -1;
+		m_xBTRawCMDQueue 	  = xQueueCreate(TSK_BT_CMD_Q_LEN, DRV_BT_RX_BUFF_LEN);
+		m_xCMDReqQueue 			= xQueueCreate(TSK_REQ_HND_REQ_Q_LEN, sizeof(CMDRequest_t));
+	  m_xCMDRespQueue 		= xQueueCreate(TSK_CMM_RESP_Q_LEN, sizeof(CMDRespStruct_t));
+		m_xTXSemaphore   		= xSemaphoreCreateBinary();
+		m_xConfigDBMutex 		= xSemaphoreCreateMutex();
+		
+		
+		ReturnCode xDriverStatus = drv_bt_init(vBTEventHandler);
+		BaseType_t xTaskStatus;
+		xTaskStatus = xTaskCreate(vBTTask, "BTTask", configMINIMAL_STACK_SIZE, NULL, 1, NULL);
+		xTaskStatus = xTaskCreate(vRequestHandlerTask, "RequestHandlerTask", configMINIMAL_STACK_SIZE, NULL, 1, NULL);
+		vTaskStartScheduler(); 
+		return -1;
 }

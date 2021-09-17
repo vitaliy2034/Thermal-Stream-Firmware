@@ -1,14 +1,12 @@
 #include "drv_bt.h"
 
-static QueueHandle_t  	 *m_pxCMDQueue;
-static SemaphoreHandle_t *m_pxTXSemaphore;
-
 static BTStatus_t				m_eBTStatus;
 
 static uint8_t m_pucTxBuffer[DRV_BT_TX_BUFF_LEN] = {0};
 static uint8_t m_ucTxBufferPointer = 0;
 static uint8_t m_ucTxBufferLength  = 0;
 
+static BTEventHandler_t m_xEventHandler;
 
 void USART2_IRQHandler(void){
 		static uint8_t pucRxBuffer[DRV_BT_RX_BUFF_LEN] = {0};
@@ -23,11 +21,11 @@ void USART2_IRQHandler(void){
 						USART2->DR = m_pucTxBuffer[m_ucTxBufferPointer];
 						m_ucTxBufferPointer++;
 				}
-				//Give semaphore that TX is ready to transmit
+				//Generate event that transmition is end and UART ready to transmit
 				else
 				{
 						USART2->CR1 &= ~(USART_CR1_TXEIE);
-						xSemaphoreGiveFromISR(*m_pxTXSemaphore, NULL);
+						m_xEventHandler(BT_EVT_RESP_TX_END, NULL);
 				}
 		}
 		if(ulUartStatus & (USART_SR_PE | USART_SR_FE | USART_SR_NE | USART_SR_ORE))
@@ -39,54 +37,48 @@ void USART2_IRQHandler(void){
 				memset(pucRxBuffer, 0, DRV_BT_RX_BUFF_LEN);
 				ucRxBufferPointer = 0;
 		
-				// send empty command to start BT task
-				if(xQueueSendFromISR(*m_pxCMDQueue, pucRxBuffer, 0) == pdFALSE)
-						m_eBTStatus |= BT_ERR_CMD_OV;
-		
+				//Generate error event
+				m_xEventHandler(BT_EVT_UART_ERR, (const BTStatus_t *)m_eBTStatus);
+				
 		}
 		if(ulUartStatus & USART_SR_RXNE)
 		{
 				uint16_t usRxSymbol = USART2->DR;
-		
+				
+				// ignore input error not reset(cleared)
+				if(m_eBTStatus != BT_OK)
+						return;
+				
 				// ignore space symbol
 				if(usRxSymbol == ' ')
 						return;
 
-				
-#if (DRV_BT_EOL_TYPE == 0) || (DRV_BT_EOL_TYPE == 2)
+				//NOTE: If err_ignore
 				// ignore '\r' symbol
 				if(usRxSymbol == '\r')
 						return;
 				
 				// if '\n' symbol, send command to queue
 				if(usRxSymbol == '\n')
-#else
-				// if '\r' symbol, send command to queue
-				if(usRxSymbol == '\r')
-#endif
 				{
-						// send command
-						if(xQueueSendFromISR(*m_pxCMDQueue, pucRxBuffer, 0) == pdFALSE)
-								m_eBTStatus |= BT_ERR_CMD_OV;
+						// Generate "command is recived" event
+					  m_xEventHandler(BT_EVT_CMD_RX_END, pucRxBuffer);
 			
 						//Clear buffer
 						memset(pucRxBuffer, 0, DRV_BT_RX_BUFF_LEN);
 						ucRxBufferPointer = 0;
 						return;
 				}
-				// if command length more than DRV_BT_RX_BUFF_LEN, send empty command
+				// if command length more than DRV_BT_RX_BUFF_LEN, send "overflowed command buffer" pattern
 				if(ucRxBufferPointer == DRV_BT_RX_BUFF_LEN)
 				{
-						//Set BT_ERR_CMD_OV error bit
-						m_eBTStatus |= BT_ERR_CMD_OV;
 			
 						//Clear buffer
-						memset(pucRxBuffer, 0, DRV_BT_RX_BUFF_LEN);
+						memcmp(pucRxBuffer, BT_OVF_CMD_BUFF, DRV_BT_RX_BUFF_LEN);
 						ucRxBufferPointer = 0;
 			
-						// send empty command to start BT task
-						if(xQueueSendFromISR(*m_pxCMDQueue, pucRxBuffer, 0) == pdFALSE)
-								m_eBTStatus |= BT_ERR_CMD_OV;
+						// Generate "command is recived" event
+					  m_xEventHandler(BT_EVT_CMD_RX_END, pucRxBuffer);
 			
 						return;
 				}
@@ -137,62 +129,62 @@ BTStatus_t drv_bt_read_and_clear_status(){
 		return temp;
 }
 
-ReturnCode drv_bt_init(QueueHandle_t *pxCMDQueue, SemaphoreHandle_t *pxTXSemaphore){
-	//Check is parameters are correct
-	if(pxCMDQueue == NULL || pxTXSemaphore == NULL)
-		return DRV_ERR_INVALID_PARAM;
-	
-	//save pointers
-	m_pxCMDQueue 		= pxCMDQueue;
-	m_pxTXSemaphore = pxTXSemaphore;
+ReturnCode drv_bt_init(BTEventHandler_t xEventHandler){
+		//Check is parameters are correct
+		if(xEventHandler == NULL)
+			return DRV_ERR_INVALID_PARAM;
+		
+		//save pointers
+		m_xEventHandler = xEventHandler;
+		
+		//set good status
+		m_eBTStatus = BT_OK;
+		
+		//Enable clocking of USART2
+		RCC->APB1ENR |= RCC_APB1ENR_USART2EN;
+		
+		//Enable clocking of GPIOA
+		RCC->APB2ENR |= RCC_APB2ENR_IOPAEN;
+		
+		//Configure GPIOA: PA2(TX) to AF PP, PA3(RX) to IN FL for USART2
+		GPIOA->CRL |= GPIO_CRL_MODE2_0; //set speed of PA2 to 10Mhz
+		GPIOA->CRL &= ~GPIO_CRL_CNF2_0;
+		GPIOA->CRL |= GPIO_CRL_CNF2_1 | GPIO_CRL_CNF3_0; 
 
-	m_eBTStatus = BT_OK;
+		//Configure USART2
+		
+		//BAUD RATE calculating
+		float 	 USARTDIV 		= PCLK1 / ((float)(DRV_BT_UART_BAUD_RATE * 16));
+		uint16_t DIV_Mantissa = (uint16_t)USARTDIV;
+		uint8_t  DIV_Fraction = (uint8_t)((USARTDIV - DIV_Mantissa) * 16.0f);
+		USART2->BRR 					= (uint16_t)((DIV_Mantissa << 4UL) | DIV_Fraction); //set baud rate of USART2
 	
-	//Enable clocking of USART2
-	RCC->APB1ENR |= RCC_APB1ENR_USART2EN;
+		//Enable transmiter, reciver pins and RXNE, TXE interrupts
+		USART2->CR1 |= USART_CR1_RXNEIE | USART_CR1_TE | USART_CR1_RE;
 	
-	//Enable clocking of GPIOA
-	RCC->APB2ENR |= RCC_APB2ENR_IOPAEN;
-	
-	//Configure GPIOA: PA2(TX) to AF PP, PA3(RX) to IN FL for USART2
-	GPIOA->CRL |= GPIO_CRL_MODE2_0; //set speed of PA2 to 10Mhz
-	GPIOA->CRL &= ~GPIO_CRL_CNF2_0;
-	GPIOA->CRL |= GPIO_CRL_CNF2_1 | GPIO_CRL_CNF3_0; 
-
-	//Configure USART2
-	
-	//BAUD RATE calculating
-	float 	 USARTDIV 		= PCLK1 / ((float)(DRV_BT_UART_BAUD_RATE * 16));
-	uint16_t DIV_Mantissa = (uint16_t)USARTDIV;
-	uint8_t  DIV_Fraction = (uint8_t)((USARTDIV - DIV_Mantissa) * 16.0f);
-	USART2->BRR 					= (uint16_t)((DIV_Mantissa << 4UL) | DIV_Fraction); //set baud rate of USART2
-	
-	//Enable transmiter, reciver pins and RXNE, TXE interrupts
-	USART2->CR1 |= USART_CR1_RXNEIE | USART_CR1_TE | USART_CR1_RE;
-	
-	//Configure parity check
+		//Configure parity check
 #if 	DRV_BT_UART_PAR_CHECK == 1
-	USART2->CR1 |= USART_CR1_M | USART_CR1_PCE | USART_CR1_PS;
+		USART2->CR1 |= USART_CR1_M | USART_CR1_PCE | USART_CR1_PS;
 #elif DRV_BT_UART_PAR_CHECK == 2
-	USART2->CR1 |= USART_CR1_M | USART_CR1_PCE;
+		USART2->CR1 |= USART_CR1_M | USART_CR1_PCE;
 #endif	
 
-	//Set stop bit count
+		//Set stop bit count
 #if 	DRV_BT_UART_STOP_BIT == 1
-	USART2->CR2 &= ~USART_CR2_STOP;
+		USART2->CR2 &= ~USART_CR2_STOP;
 #elif DRV_BT_UART_STOP_BIT == 2
-	USART2->CR2 |= USART_CR2_STOP_1;
+		USART2->CR2 |= USART_CR2_STOP_1;
 #endif
-	// Enable EI(Error Interrupt)
-	USART2->CR3 |= USART_CR3_EIE;
-	//enable USART2
-	USART2->CR1 |= USART_CR1_UE; 
-	
-	//Set prioryty of USART2 interupt
-	NVIC_SetPriority(USART2_IRQn, 6);
-	
-	//Enable USART2 interupt
-	NVIC_EnableIRQ(USART2_IRQn);
-	
-	return DRV_OK;
+		// Enable EI(Error Interrupt)
+		USART2->CR3 |= USART_CR3_EIE;
+		//enable USART2
+		USART2->CR1 |= USART_CR1_UE; 
+		
+		//Set prioryty of USART2 interupt
+		NVIC_SetPriority(USART2_IRQn, 6);
+		
+		//Enable USART2 interupt
+		NVIC_EnableIRQ(USART2_IRQn);
+		
+		return DRV_OK;
 }

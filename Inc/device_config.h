@@ -1,10 +1,18 @@
 #ifndef DEVICE_CONFIG_H__
 #define DEVICE_CONFIG_H__
-
+//
 //Common defines
+//
 #define PCLK1			8000000UL
 #define MAX_TEMP  120
 #define MIN_TEMP  -10
+
+//
+//Common defines for tasks
+//
+
+//Length of responce`s queue(should be 2)
+#define TSK_CMM_RESP_Q_LEN 2
 
 //
 //Bluetooth driver drv_bt defines
@@ -47,7 +55,7 @@
 //Bluetooth task defines
 //
 
-//Length of queue of commands(should be 2)
+//Length of queue of raw commands(should be 2)
 #define TSK_BT_CMD_Q_LEN		 2
 
 //Length of responce
@@ -58,5 +66,19 @@
 
 //Length of instruction
 #define TSK_BT_CMD_ONLY_LEN  5
+
+//Max parameter count of command 
+#define TSK_BT_MAX_PARAM_CNT 3
+
+//Parameter split character
+#define TSK_BT_PARAM_SPLT_CH '_'
+
+//
+//Request handler defines
+//
+
+//Length of request`s queue(should be 2)
+#define TSK_REQ_HND_REQ_Q_LEN 2
+
 
 #endif //DEVICE_CONFIG_H__
