@@ -6,6 +6,7 @@
 #define PCLK1			8000000UL
 #define MAX_TEMP  120
 #define MIN_TEMP  -10
+#define STD_Q_TIMEOUT 1000
 
 //
 //Common defines for tasks
@@ -37,11 +38,10 @@
 */
 
 //End of line type
-#define DRV_BT_EOL_TYPE 2
+#define DRV_BT_EOL_TYPE 1
 /*	
 	0 - LF, (CR+LF complitable for RX) (Line Feed, Code: 0x0D), OS: Linux
-	1 - CR (Carriage Return, Code: 0x0A), OS: oldMacOS
-	2 - CR+LF,(LF complitable for RX) OS: Windows
+	1 - CR+LF,(LF complitable for RX) OS: Windows
 */
 
 //Length of RX buffer in which the command will be stored
