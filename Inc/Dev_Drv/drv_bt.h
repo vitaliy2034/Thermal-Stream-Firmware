@@ -14,12 +14,11 @@ typedef enum
 } BTStatus_t;
 
 
-
 typedef enum
 {
-		BT_EVT_CMD_RX_END  = 0x00,
-		BT_EVT_RESP_TX_END = 0x01,
-		BT_EVT_CMD_RX_ERR  = 0x02,
+    BT_EVT_CMD_RX_END  = 0x00,
+    BT_EVT_RESP_TX_END = 0x01,
+    BT_EVT_CMD_RX_ERR  = 0x02,
 } BTEventType_t;
 
 
@@ -29,9 +28,12 @@ typedef void (*BTEventHandler_t)(BTEventType_t xEventType, const void * pv_conte
 ReturnCode drv_bt_init(BTEventHandler_t xEventHandler);
 
 //Send response function
-ReturnCode drv_bt_send_resp(const uint8_t * resp, uint8_t len);
+ReturnCode drv_bt_send(const uint8_t * resp, uint16_t len);
 
-//Read last command status
-BTStatus_t drv_bt_read_and_clear_status();
+//Read BTDrv Status
+BTStatus_t drv_bt_read_status(void);
+
+//Clear BTDrv Status
+void drv_bt_clear_status(void);
 
 #endif //DRV_BT_H__

@@ -15,6 +15,13 @@
 //Length of responce`s queue(should be 2)
 #define TSK_CMM_RESP_Q_LEN 2
 
+
+//
+//Logging library defines
+//
+
+#define LIB_LOG_BUFF_LEN 250
+
 //
 //Bluetooth driver drv_bt defines
 //
@@ -48,7 +55,7 @@
 #define DRV_BT_RX_BUFF_LEN   10
 
 //Length of TX buffer in which the responce will be stored
-#define DRV_BT_TX_BUFF_LEN   (6 + 2)
+#define DRV_BT_TX_BUFF_LEN   (6 + 2 + LIB_LOG_BUFF_LEN)
 
 
 //
@@ -74,11 +81,11 @@
 #define TSK_BT_PARAM_SPLT_CH '_'
 
 //
-//Request handler defines
+//Request handler task defines
 //
-
 //Length of request`s queue(should be 2)
 #define TSK_REQ_HND_REQ_Q_LEN 2
+
 
 
 #endif //DEVICE_CONFIG_H__

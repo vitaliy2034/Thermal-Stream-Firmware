@@ -1,11 +1,8 @@
-#include "drv_bt.h"
-#include "arm_compat.h"
+#include "drv_usb_uart.h"
 
-static BTStatus_t				m_eBTStatus;
-
-static uint8_t  m_pucTxBuffer[DRV_BT_TX_BUFF_LEN] = {0};
-static uint16_t m_usTxBufferPointer = 0;
-static uint16_t m_usTxBufferLength  = 0;
+static uint8_t m_pucTxBuffer[DRV_BT_TX_BUFF_LEN] = {0};
+static uint8_t m_ucTxBufferPointer = 0;
+static uint8_t m_ucTxBufferLength  = 0;
 
 static BTEventHandler_t m_xEventHandler;
 
@@ -16,10 +13,10 @@ void USART2_IRQHandler(void){
     if(ulUartStatus & USART_SR_TXE)
 	{
         //Send data if TX buffer not empty
-        if(m_usTxBufferPointer < m_usTxBufferLength)
+        if(m_ucTxBufferPointer < m_ucTxBufferLength)
         {
-            USART2->DR = m_pucTxBuffer[m_usTxBufferPointer];
-            m_usTxBufferPointer++;
+            USART2->DR = m_pucTxBuffer[m_ucTxBufferPointer];
+            m_ucTxBufferPointer++;
 		}
         //Generate event that transmition is end and UART ready to transmit
         else
@@ -82,35 +79,35 @@ void USART2_IRQHandler(void){
 			
             return;
         }
-        pucRxBuffer[ucRxBufferPointer] = (uint8_t)usRxSymbol;
+        pucRxBuffer[ucRxBufferPointer] = usRxSymbol;
         ucRxBufferPointer++;
 	}
 }
 
-ReturnCode drv_bt_send(const uint8_t * pucResp, uint16_t ucLen){
+ReturnCode drv_bt_send_resp(const uint8_t * pucResp, uint8_t ucLen){
 	
     //Check input parameters	
 	if(pucResp == NULL || ucLen >= DRV_BT_TX_BUFF_LEN || ucLen == 0)
         return DRV_ERR_INVALID_PARAM;
 	
     //Check is the system busy
-    if(m_usTxBufferPointer != m_usTxBufferLength)
+    if(m_ucTxBufferPointer != m_ucTxBufferLength)
         return DRV_ERR_BUSY;
 		
     //Disable interrupts
-    __disable_irq();
+    taskENTER_CRITICAL();
 		
     //Copy parameters
     memcpy(m_pucTxBuffer, pucResp, ucLen); 
     //Reset pointer
-    m_usTxBufferPointer = 0;
+    m_ucTxBufferPointer = 0;
 #if DRV_BT_EOL_TYPE == 2		
     
-    m_usTxBufferLength = ucLen + 2;
+    m_ucTxBufferLength = ucLen + 2;
     memcpy(m_pucTxBuffer + ucLen, "\r\n", 2);
 
 #else		
-    m_usTxBufferLength = ucLen + 1;
+    m_ucTxBufferLength = ucLen + 1;
 #if DRV_BT_EOL_TYPE == 0
 	m_pucTxBuffer[ucLen] = '\n'; 
 #else
@@ -121,7 +118,7 @@ ReturnCode drv_bt_send(const uint8_t * pucResp, uint16_t ucLen){
     USART2->CR1 |= USART_CR1_TXEIE;
 	
     //Enable interrupts
-    __enable_irq();
+	taskEXIT_CRITICAL();
     return DRV_OK;
 }
 

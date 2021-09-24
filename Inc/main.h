@@ -14,7 +14,7 @@
 #include "semphr.h"
 #include "queue.h"
 
-#define BT_RESP_PAT_OK  "OK%04X"
+#define BT_RESP_PAT_OK  "OK%04d"
 #define BT_RESP_PAT_ERR "ER%04X"
 
 //First statments should be equal with BTStatus_t
@@ -43,7 +43,7 @@ typedef struct {
     union
     {
         CMDRespCode_t   eErrCode;
-        uint16_t        sRespVal;
+        int16_t         sRespVal;
     }param;
 } CMDRespStruct_t;
 
