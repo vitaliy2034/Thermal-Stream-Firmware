@@ -158,7 +158,7 @@ void vBTTask(void * pvParams){
     BaseType_t xQueueResult;
     for(;;){
         xQueueReceive(m_xBTRawCMDQueue, pucCMD, portMAX_DELAY);
-        xLibLogSend(__func__, LIB_LOG_DEBUG, "Command Recived: %s", pucCMD);
+        xLibLogSend(__func__, LIB_LOG_INFO, "Command Recived: %s", pucCMD);
         //check if BT driver error
         BTStatus_t 	eBTStatus = drv_bt_read_status();
         if(eBTStatus == BT_OK)

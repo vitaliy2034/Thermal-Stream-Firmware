@@ -423,6 +423,11 @@
               <FileType>5</FileType>
               <FilePath>.\Inc\Dev_Drv\drv_temp.h</FilePath>
             </File>
+            <File>
+              <FileName>drv_pelt.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>.\Inc\Dev_Drv\drv_pelt.h</FilePath>
+            </File>
           </Files>
         </Group>
         <Group>
@@ -437,6 +442,11 @@
               <FileName>drv_temp.c</FileName>
               <FileType>1</FileType>
               <FilePath>.\Src\Dev_drv\drv_temp.c</FilePath>
+            </File>
+            <File>
+              <FileName>drv_pelt.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>.\Src\Dev_drv\drv_pelt.c</FilePath>
             </File>
           </Files>
         </Group>
