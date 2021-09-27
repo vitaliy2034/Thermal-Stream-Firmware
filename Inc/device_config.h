@@ -83,9 +83,15 @@
 //
 //Request handler task defines
 //
+
 //Length of request`s queue(should be 2)
 #define TSK_REQ_HND_REQ_Q_LEN 2
 
+//
+//PID task defines
+//
 
+//Length of temperature`s queue(should be 2)
+#define TSK_PID_TEMP_Q_LEN 2
 
 #endif //DEVICE_CONFIG_H__

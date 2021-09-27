@@ -1,5 +1,6 @@
 #include "main.h"
 #include "drv_bt.h"
+#include "drv_temp.h"
 #include "sp_bt_task.h"
 #include "lib_log.h"
 #include "stdlib.h"
@@ -8,16 +9,20 @@
 static QueueHandle_t  	 m_xBTRawCMDQueue;
 static QueueHandle_t  	 m_xCMDReqQueue;
 static QueueHandle_t  	 m_xCMDRespQueue;
+static QueueHandle_t  	 m_xTempQueue;
+
 static SemaphoreHandle_t m_xTXSemaphore;
+
 static SemaphoreHandle_t m_xConfigDBMutex;
 
 struct
 {
-    int16_t  sRequiredTemperature;
-    int16_t  sCurrentTemperature;
-    float 	 fSlewRate;
-    uint32_t ulStatus;
-} xConfigDB;
+    temp_t  sRequiredTemperature;
+    temp_t  sCurrentTemperature;
+    float 	fSlewRate;
+} m_xConfigDB;
+
+//TODO: Initialization check
 
 
 //NOTE: This function called from ISR, so use *fromISR function
@@ -44,7 +49,7 @@ void vBTEventHandler (BTEventType_t xEventType, const void * pv_context)
             xQueueResult = xQueueSendFromISR(m_xBTRawCMDQueue, pucTmpBuffer, NULL);
             if(xQueueResult == pdFALSE)
             {
-                xLibLogSend(__func__, LIB_LOG_ERROR, "Error to send, queue is full: %s", pv_context);
+                xLibLogSend(__func__, LIB_LOG_ERROR, "Error to send command, queue is full: %s", pv_context);
             }
         }break;
         default:
@@ -52,11 +57,30 @@ void vBTEventHandler (BTEventType_t xEventType, const void * pv_context)
 		}
 }
 
+
+//NOTE: This function called from ISR, so use *fromISR function
+void vTempEventHandler(TempEventType_t xEventType, const void * pv_context){
+    
+    portBASE_TYPE xQueueResult;
+    switch(xEventType)
+    {
+        case TEMP_EVT_READY:
+            xQueueResult = xQueueSendFromISR(m_xTempQueue, pv_context, NULL);
+            if(xQueueResult == pdFALSE)
+            {
+                xLibLogSend(__func__, LIB_LOG_ERROR, "Error to send temperature, queue is full.");
+            }
+            break;
+    }
+
+}
+
 static void vSendMessage(const portCHAR * pucMessage, uint16_t ucMsgLen){
     portBASE_TYPE xStatus;
     //Take UART TX Semaphore 
     if(xPortIsInsideInterrupt() == pdFALSE)
     {
+        
         xStatus = xSemaphoreTake(m_xTXSemaphore, pdMS_TO_TICKS(STD_Q_TIMEOUT));
         //Check error to take Semaphore in Task
         if(xStatus == pdFALSE)
@@ -89,12 +113,18 @@ void vRequestHandlerTask(void * pbParam){
     CMDRequest_t eRequest;
     CMDRespStruct_t xResponce;
     BaseType_t xQueueResult;
+    
+    //Give semaphore after start
+    xSemaphoreGive(m_xTXSemaphore);
+    
     for(;;){
         xQueueReceive(m_xCMDReqQueue, &eRequest, portMAX_DELAY);
         switch(eRequest){
             case REQ_READ_TEMP:	
                 xResponce.xIsError = pdFALSE;
-                xResponce.param.sRespVal = -32;
+                xSemaphoreTake(m_xConfigDBMutex, portMAX_DELAY);
+                xResponce.param.sRespVal = m_xConfigDB.sCurrentTemperature;
+                xSemaphoreGive(m_xConfigDBMutex);
                 break;
             case REQ_READ_STAT:
                 xResponce.xIsError = pdFALSE;
@@ -209,19 +239,53 @@ void vBTTask(void * pvParams){
     vTaskDelete(NULL);
 }
 
+void vPIDTask(void *pvParam){
+    BaseType_t xResult;
+    temp_t xTempBuffer;
+    for(;;){
+        //Start temperature read
+        drv_temp_read_int();
+      
+        //Wait until drv_temp send temperature value
+        //should changhe wait time 
+        xQueueReceive(m_xTempQueue, &xTempBuffer, portMAX_DELAY);
+        
+        xLibLogSend(__func__, LIB_LOG_DEBUG, "Temperature recived: %f", xTempBuffer);
+        
+        //should changhe wait time 
+        xResult = xSemaphoreTake(m_xConfigDBMutex, portMAX_DELAY);
+        
+        m_xConfigDB.sCurrentTemperature = xTempBuffer; 
+        
+        xSemaphoreGive(m_xConfigDBMutex);
+        vTaskDelay(100);
+    }
+    vTaskDelete(NULL);
+}
+
 int main(void){
-    m_xBTRawCMDQueue 	    = xQueueCreate(TSK_BT_CMD_Q_LEN, DRV_BT_RX_BUFF_LEN);
-    m_xCMDReqQueue 			= xQueueCreate(TSK_REQ_HND_REQ_Q_LEN, sizeof(CMDRequest_t));
-    m_xCMDRespQueue 		= xQueueCreate(TSK_CMM_RESP_Q_LEN, sizeof(CMDRespStruct_t));
-    m_xTXSemaphore   		= xSemaphoreCreateBinary();
-    m_xConfigDBMutex 		= xSemaphoreCreateMutex();
+    m_xBTRawCMDQueue    = xQueueCreate(TSK_BT_CMD_Q_LEN, DRV_BT_RX_BUFF_LEN);
+    m_xCMDReqQueue 		= xQueueCreate(TSK_REQ_HND_REQ_Q_LEN, sizeof(CMDRequest_t));
+    m_xCMDRespQueue 	= xQueueCreate(TSK_CMM_RESP_Q_LEN, sizeof(CMDRespStruct_t));
+    m_xTempQueue   	    = xQueueCreate(TSK_PID_TEMP_Q_LEN, sizeof(temp_t));
+    
+    m_xTXSemaphore  	= xSemaphoreCreateBinary();
+    
+    m_xConfigDBMutex    = xSemaphoreCreateMutex();
 	
     ReturnCode xStatus = drv_bt_init(vBTEventHandler);
+    xStatus |= drv_temp_init(vTempEventHandler);
     xStatus |= xLibLogInit(vSendMessage, LIB_LOG_DEBUG);
+    
+    configASSERT(!xStatus);
     
     BaseType_t xTaskStatus;
     xTaskStatus = xTaskCreate(vBTTask, "BTTask", configMINIMAL_STACK_SIZE, NULL, 1, NULL);
-    xTaskStatus = xTaskCreate(vRequestHandlerTask, "RequestHandlerTask", configMINIMAL_STACK_SIZE, NULL, 1, NULL);
+    xTaskStatus &= xTaskCreate(vRequestHandlerTask, "RequestHandlerTask", configMINIMAL_STACK_SIZE, NULL, 1, NULL);
+    xTaskStatus &= xTaskCreate(vPIDTask, "PIDTask", configMINIMAL_STACK_SIZE, NULL, 2, NULL);
+    
+    configASSERT(xTaskStatus);
+    
     vTaskStartScheduler(); 
     return -1;
 }
