@@ -36,7 +36,20 @@ typedef enum
     REQ_INVALID     = 0,
     REQ_READ_TEMP   = 1,
     REQ_READ_STAT   = 2
-} CMDRequest_t;
+} CMDRequestCode_t;
+
+typedef enum
+{
+    DIR_INVALID         = 0,
+    DIR_WRITE_TEMP      = 1,
+    DIR_WRITE_LOG_PRIO  = 2
+} CMDDirectiveCode_t;
+
+typedef struct
+{
+  CMDDirectiveCode_t eDirective;
+  uint32_t plParams[TSK_BT_MAX_PARAM_CNT];  
+} CMDDirective_t;
 
 typedef struct {
     BaseType_t xIsError;

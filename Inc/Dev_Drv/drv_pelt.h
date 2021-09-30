@@ -11,8 +11,8 @@ typedef enum{
 }PeltNum_t;
 
 typedef enum{
-    DRV_PELT_MODE_COLD = 0x0,
-    DRV_PELT_MODE_HEAT = 0x1
+    DRV_PELT_MODE_HEAT = 0x0,
+    DRV_PELT_MODE_COLD = 0x1
 }PeltMode_t;
 
 //Initialize temperature sensor driver
@@ -22,8 +22,6 @@ ReturnCode drv_pelt_init();
 ReturnCode drv_pelt_mode_set(PeltNum_t xPelt, PeltMode_t xMode);
 
 //Set peltie pwm duty 
-ReturnCode drv_pelt_pwm_duty_set(PeltNum_t xPelt, uint16_t usDutyProMille);
+ReturnCode drv_pelt_pwm_duty_set(PeltNum_t xPelt, uint16_t usDuty);
 
-//TODO: Develop this feature
-//ReturnCode drv_temp_calibrate();
-#endif //DRV_TEMP_H__
+#endif //DRV_PELT_H__

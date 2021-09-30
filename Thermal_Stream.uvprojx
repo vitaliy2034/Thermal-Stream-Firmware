@@ -428,6 +428,11 @@
               <FileType>5</FileType>
               <FilePath>.\Inc\Dev_Drv\drv_pelt.h</FilePath>
             </File>
+            <File>
+              <FileName>drv_pump.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>.\Inc\Dev_Drv\drv_pump.h</FilePath>
+            </File>
           </Files>
         </Group>
         <Group>
@@ -447,6 +452,11 @@
               <FileName>drv_pelt.c</FileName>
               <FileType>1</FileType>
               <FilePath>.\Src\Dev_drv\drv_pelt.c</FilePath>
+            </File>
+            <File>
+              <FileName>drv_pump.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>.\Src\Dev_drv\drv_pump.c</FilePath>
             </File>
           </Files>
         </Group>

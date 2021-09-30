@@ -3,7 +3,7 @@
 //
 //Common defines
 //
-#define PCLK1			8000000UL
+#define PCLK1     8000000UL
 #define MAX_TEMP  120
 #define MIN_TEMP  -10
 #define STD_Q_TIMEOUT 1000
@@ -21,6 +21,14 @@
 //
 
 #define LIB_LOG_BUFF_LEN 250
+
+//
+//Peltier driver drv_pelt defines
+//
+
+#define DRV_PELT_PWM_PSC  0
+
+#define DRV_PELT_PWM_RES  8
 
 //
 //Bluetooth driver drv_bt defines
@@ -90,6 +98,14 @@
 //
 //PID task defines
 //
+
+#define TSK_PID_DELTA_TIME 10
+
+#define TSK_PID_KOEF_P     0.0f
+
+#define TSK_PID_KOEF_I     0.0f
+
+#define TSK_PID_KOEF_D     0.0f
 
 //Length of temperature`s queue(should be 2)
 #define TSK_PID_TEMP_Q_LEN 2
